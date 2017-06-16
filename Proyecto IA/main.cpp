@@ -40,7 +40,7 @@ vector<vector<bool>> FutureSolution;
 vector<entity> entities;
 vector<room> rooms;
 vector<constraint> constraints;
-vector<vector<vector<float>>> domain;
+vector<vector<vector<bool>>> domain;
 
 entity readEntity(string line){//Lee una entidad a partir de una linea del .txt
     entity ent;
@@ -272,13 +272,6 @@ void showConstraints(){//Muestra las restricciones cargadas en memoria
 }
 
 void showSolution(){//Muestra la solucion encontrada
-    /*vector<vector<bool>>::iterator it3;
-    for (it3=CurrentSolution.begin(); it3 != CurrentSolution.end(); ++it3){
-        for (vector<bool>::iterator it=(*it3).begin(); it != (*it3).end(); ++it){
-            cout << *it << " ";
-        }
-                cout << "\n";
-    }*/
     for (vector<bool> vect : CurrentSolution)
     {
         for (bool item : vect)
@@ -288,6 +281,35 @@ void showSolution(){//Muestra la solucion encontrada
         cout << endl;
     }
 
+}
+
+void showDomain(){
+    for (vector<vector<bool>> vect : domain)
+    {
+        for (vector<bool> item : vect)
+        {
+            cout << "(";
+            for(bool item2:item){
+                cout << item2;
+                
+            }
+            cout << ") ";
+        }
+        cout << endl;
+    }
+}
+
+void initializeDomain(){//Inicia la matriz de dominios
+    for(int i=0;i<entities.size();i++){
+        vector<vector<bool>> aux;
+        for(int j=0;j<rooms.size();j++){
+            vector<bool> aux2;
+            aux2.push_back(false);
+            aux2.push_back(true);
+            aux.push_back(aux2);
+        }
+        domain.push_back(aux);
+    }
 }
 
 void initializeSolutions(){//Inicializa la matriz de soluciones en puros 0
@@ -301,7 +323,14 @@ void initializeSolutions(){//Inicializa la matriz de soluciones en puros 0
         
     }
 }
-
+int getRoom(int ent){//Returns the room of the entity. Returns -1 if the entity is not allocated.
+    for(int i=0;i<FutureSolution[0].size();i++){
+        if(FutureSolution[ent][i]==1){
+            return i;
+        }
+    }
+    return -1;
+}
 void readInstance(string path){//Lee la instancia de datos a partir de la direccion del archivo
     string line;
     ifstream file;
@@ -343,29 +372,119 @@ void readInstance(string path){//Lee la instancia de datos a partir de la direcc
     file.close();
     return;
 }
-void checkFutureSolution(){
-    for(int i=0;i<FutureSolution.size();i++){
-        for(int j=0;j<FutureSolution[0].size();j++){
-            
+bool checkFutureSolution(){
+    int count;
+    for (vector<bool> ent : FutureSolution){//Check entity is only on one room
+        count=0;
+        for (bool rom : ent){
+            if(rom){
+                count++;
+            }
+            if(count>1){
+                return false;
+            }
         }
- 
     }
+    
     for(constraint cons: constraints){
+        if(cons.type==-1){//Unused Constraint
+            continue;
+        }
+        else if(cons.type==0 && cons.hardness==true){//Allocation constraint
+            if(FutureSolution[cons.subject][cons.target]==0){
+                return false;
+            }
+        }
+        else if(cons.type==1 && cons.hardness==true){//Non allocation constraint
+            if(FutureSolution[cons.subject][cons.target]==1){
+                return false;
+            }
+        }
+        else if(cons.type==2 && cons.hardness==true){//one of constraint (No usada en el dataset)
+            continue;
+        }
+        else if(cons.type==3 && cons.hardness==true){//capacity constraint
+            int spaceUsed=0;
+            for(int i=0;i<FutureSolution.size();i++){
+                if(FutureSolution[i][cons.subject]==true){
+                    spaceUsed+=entities[i].space;
+                }
+            }
+            if(spaceUsed>rooms[cons.subject].space){
+                return false;
+            }
+        }
+        else if(cons.type==4 && cons.hardness==true){//sameroom constraint
+            if(getRoom(cons.subject)!=getRoom(cons.target)){
+                return false;
+            }
+        }
+        else if(cons.type==5 && cons.hardness==true){//not same room constraint
+            if(getRoom(cons.subject)==getRoom(cons.target)){
+                return false;
+            }
+        }
+        else if(cons.type==6 && cons.hardness==true){//not sharing constraint
+            for(int i=0;i<entities.size();i++){
+                if(i==cons.subject){
+                    continue;
+                }
+                if(getRoom(cons.subject)==getRoom(i)){
+                    return false;
+                }
+            }
+        }
+        else if(cons.type==7 && cons.hardness==true){//adjacency constraint
+            bool isAdjacent=false;
+            for(int item: rooms[getRoom(cons.subject)].adjacentRooms){
+                if(item==rooms[getRoom(cons.subject)].id){
+                    isAdjacent=true;
+                }
+            }
+            if(!isAdjacent){
+                return false;
+            }
+        }
+        else if(cons.type==8 && cons.hardness==true){//neaby constraint
+            if(rooms[getRoom(cons.subject)].floor!=rooms[getRoom(cons.target)].floor){
+                return false;
+            }
+        }
+        else if(cons.type==9 && cons.hardness==true){//away from constraint
+            if(rooms[getRoom(cons.subject)].floor==rooms[getRoom(cons.target)].floor){
+                return false;
+            }
+        }
         
     }
+    return true;
 }
+
 void forwardChecking(){
-    for (vector<bool> vect : FutureSolution){
-        for (bool item : vect){
-            
+    for(int i=0;i<entities.size();i++){
+        for(int j=0;j<rooms.size();j++){
+            vector<bool>::iterator it;
+            for(it=domain[i][j].begin();it!=domain[i][j].end();++it){
+                FutureSolution[i][j]=*it;
+                if(!checkFutureSolution()){
+                    domain[i][j].erase(it);
+                }
+            }
+            if(domain[i][j].size()==0){
+                cout << "backtrack";
+                return;
+            }
+            CurrentSolution[i][j]=FutureSolution[i][j]=domain[i][j][0];
         }
     }
-
 }
-
 int main(int argc, const char * argv[]) {
     readInstance("/Users/carlos/Downloads/OSAP-Instancias/nott_data/nott1d.txt");
     initializeSolutions();
-    showSolution();
+    FutureSolution=CurrentSolution;
+    initializeDomain();
+    forwardChecking();
+    showDomain();
+    //showSolution();
     return 0;
 }
