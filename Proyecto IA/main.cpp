@@ -35,6 +35,19 @@ struct Constraint{
     int target;
 };
 
+//Penalties for constraints
+int p0=20;  //Allocation
+int p1=10;  //Non Allocation
+int p2=10;  //One Of
+int p3=10;  //capacity
+int p4=10;  //same room
+int p5=10;  //not same room
+int p6=50;  //not sharing
+int p7=10;  //adjacency
+int p8=10;  //nearby
+int p9=10;  //away
+
+
 vector<int> solution;
 vector<vector<int>> domain;
 
@@ -543,6 +556,81 @@ bool checkDomain(int ent, int room){//checks if the domain value is feasible
     }
     return true;
 }
+
+int penalties(){//returns the penalties of soft constraints
+    int penalties=0;
+    for(Constraint cons: constraints){
+        if(cons.type==-1){//Unused Constraint
+            continue;
+        }
+        else if(cons.type==0 && cons.hardness==false){//Allocation constraint
+            if(cons.target!=solution[cons.subject]){
+                penalties+=p0;
+            }
+        }
+        else if(cons.type==1 && cons.hardness==false){//Non allocation constraint
+            if(cons.target==solution[cons.subject]){
+                penalties+=p1;
+            }
+        }
+        else if(cons.type==2 && cons.hardness==false){//one of constraint (Not used on the dataset)
+            continue;
+        }
+        else if(cons.type==3 && cons.hardness==false){//capacity constraint
+            int spaceUsed=0;
+            for(int i=0;i<solution.size();i++){
+                if(solution[i]==cons.subject){
+                    spaceUsed+=entities[i].space;
+                }
+            }
+            if(spaceUsed>rooms[cons.subject].space){
+                penalties+=p3;
+            }
+        }
+        else if(cons.type==4 && cons.hardness==false){//sameroom constraint
+            if(solution[cons.target]!=solution[cons.subject]){
+                penalties+=p4;
+            }
+        }
+        else if(cons.type==5 && cons.hardness==false){//not same room constraint
+            if(solution[cons.target]==solution[cons.subject]){
+                penalties+=p5;
+            }
+        }
+        else if(cons.type==6 && cons.hardness==false){//not sharing constraint
+            for(int i=0;i<entities.size();i++){
+                if(solution[i]==solution[cons.subject] && i!=cons.subject){
+                    penalties+=p6;
+                }
+            }
+        }
+        else if(cons.type==7 && cons.hardness==false){//adjacency constraint
+            bool isAdjacent=false;
+            for(int item: rooms[solution[cons.subject]].adjacentRooms){
+                if(item==solution[cons.target]){
+                    isAdjacent=true;
+                }
+            }
+            if(!isAdjacent){
+                penalties+=p7;
+            }
+        }
+        else if(cons.type==8 && cons.hardness==false){//neaby constraint
+            if(rooms[solution[cons.subject]].floor!=rooms[solution[cons.target]].floor){
+                penalties+=p8;
+            }
+           
+        }
+        else if(cons.type==9 && cons.hardness==false){//away from constraint
+            if(rooms[solution[cons.subject]].floor==rooms[solution[cons.target]].floor){
+                penalties+=p9;
+            }
+        }
+        
+    }
+    return penalties;
+}
+
 /*
 void forwardChecking(){
     for(int i=0;i<entities.size();i++){
@@ -565,9 +653,59 @@ void forwardChecking(){
 }
  */
 
+int objectiveFunction(){
+    int overusedSpace=0;
+    int underusedSpace=0;
+    vector<int> usedSpace;
+    for (int i=0;i<rooms.size();i++){
+        usedSpace.push_back(0);
+    }
+    for(int i=0;i<solution.size();i++){
+        usedSpace[solution[i]]+=entities[i].space;
+    }
+    for(int i=0;i<rooms.size();i++){
+        if(rooms[i].space>usedSpace[i]){
+            underusedSpace+=(rooms[i].space-usedSpace[i]);
+        }
+        else if(rooms[i].space<usedSpace[i]){
+            overusedSpace+=(usedSpace[i]-rooms[i].space);
+        }
+    }
+    
+    return penalties()+underusedSpace+overusedSpace;
+}
+void writeSolution(){
+    ofstream myfile;
+    myfile.open ("/Users/carlos/Downloads/OSAP-Instancias/nott_data/solucion.txt",ios::app);
+    for (int i:solution) {
+        myfile << i << " ";
+    }
+    myfile << endl << objectiveFunction() << endl << endl;
+    myfile.close();
+}
+
 void forwardChecking(){
     long unsigned int aux;
-    for(int i=0;i<domain.size();i++){
+    for(int i=0;i<=domain.size();i++){
+        if(i==domain.size()){//Si tengo una solucion, borra del dominio el ultimo valor instanseado y hace backtrack cronologico
+            domain[i-1].erase(domain[i-1].begin());
+            i-=2;
+            writeSolution();
+            continue;
+        }
+        if(domain[i].size()==0){//Si la entidad no tiene dominio, hace backtrack cronologico
+            if(i==0){
+                return;
+            }
+            domain[i-1].erase(domain[i-1].begin());
+            for(int m=0;m<rooms.size();m++){
+                domain[i].push_back(m);
+            }
+            i-=2;
+            continue;
+            
+        }
+
         aux=domain[i].size();
         vector<int>::iterator it=domain[i].begin();
         for(int j=0;j<aux;j++){
@@ -579,19 +717,29 @@ void forwardChecking(){
             
             
         }
-        if(domain[i].size()==0){
-            cout << "Backtracking";
+        if(domain[i].size()==0){//Si la entidad no tiene dominio, hace backtrack cronologico
+            if(i==0){
+                return;
+            }
+            domain[i-1].erase(domain[i-1].begin());
+            for(int m=0;m<rooms.size();m++){
+                domain[i].push_back(m);
+            }
+            i-=2;
+            continue;
+            
         }
         solution[i]=domain[i][0];
     }
+    
 }
 
 int main(int argc, const char * argv[]) {
-    readInstance("/Users/carlos/Downloads/OSAP-Instancias/nott_data/toy.txt");
+    readInstance("/Users/carlos/Downloads/OSAP-Instancias/nott_data/nott1d.txt");
     initSolution();
     initDomain();
     forwardChecking();
-    showDomain();
+    //showDomain();
     showSolution();
     return 0;
 }
