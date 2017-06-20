@@ -47,20 +47,18 @@ int p7=10;  //adjacency
 int p8=10;  //nearby
 int p9=10;  //away
 
-
+int iterations=500000;//Solutions found until the algorithm stops
 vector<int> solution;
+vector<int> bestSolution;
 vector<vector<int>> domain;
-
-//vector<vector<bool>> CurrentSolution;
-//vector<vector<bool>> FutureSolution;
 vector<Entity> entities;
 vector<Room> rooms;
 vector<Constraint> constraints;
-//vector<vector<vector<bool>>> domain;
 
 void initSolution(){
     for(int i=0;i<entities.size();i++){
         solution.push_back(-1);
+        bestSolution.push_back(-1);
     }
 }
 void initDomain(){
@@ -81,8 +79,8 @@ void showDomain(){
     }
     cout << endl;
 }
-void showSolution(){
-    for (int i:solution) {
+void showSolution(vector<int> sol){
+    for (int i:sol) {
         cout << i << " ";
     }
     cout << endl;
@@ -669,15 +667,18 @@ void forwardChecking(){
 }
  */
 
-int objectiveFunction(){
+int objectiveFunction(vector<int> sol){
     int overusedSpace=0;
     int underusedSpace=0;
     vector<int> usedSpace;
     for (int i=0;i<rooms.size();i++){
         usedSpace.push_back(0);
     }
-    for(int i=0;i<solution.size();i++){
-        usedSpace[solution[i]]+=entities[i].space;
+    for(int i=0;i<sol.size();i++){
+        if(sol[i]==-1){
+            return 1000000000;
+        }
+        usedSpace[sol[i]]+=entities[i].space;
     }
     for(int i=0;i<rooms.size();i++){
         if(rooms[i].space>usedSpace[i]){
@@ -696,7 +697,7 @@ void writeSolution(){
     for (int i:solution) {
         myfile << i << " ";
     }
-    myfile << endl << objectiveFunction() << endl << endl;
+    myfile << endl << objectiveFunction(solution) << endl << endl;
     myfile.close();
 }
 
@@ -708,7 +709,16 @@ void forwardChecking(){
             domain[i-1].erase(domain[i-1].begin());
             i-=2;
             //cout<<"solucion:"<<endl;
-            writeSolution();
+            //writeSolution();
+            iterations--;
+            //cout << objectiveFunction(solution) << " " << objectiveFunction(bestSolution) << endl;
+            if(objectiveFunction(solution)<objectiveFunction(bestSolution)){
+                bestSolution=solution;
+                
+            }
+            if(iterations==0){
+                return;
+            }
             continue;
         }
         if(domain[i].size()==0){//Si la entidad no tiene dominio, hace backtrack cronologico
@@ -756,7 +766,6 @@ void forwardChecking(){
             }
             i-=2;
             //cout<<"solucion:"<<endl;
-            writeSolution();
             continue;
             
         }
@@ -771,6 +780,7 @@ int main(int argc, const char * argv[]) {
     initDomain();
     forwardChecking();
     //showDomain();
-    showSolution();
+    showSolution(bestSolution);
+    cout << objectiveFunction(bestSolution) << endl;
     return 0;
 }
