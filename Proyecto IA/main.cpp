@@ -79,11 +79,13 @@ void showDomain(){
         }
         cout << endl;
     }
+    cout << endl;
 }
 void showSolution(){
     for (int i:solution) {
         cout << i << " ";
     }
+    cout << endl;
 }
 
 
@@ -386,6 +388,9 @@ void readInstance(string path){//Lee la instancia de datos a partir de la direcc
     ifstream file;
     file.open(path);
     while ( getline (file,line) ){
+        if(line.size()<2){
+            continue;
+        }
         if(line[0]=='E'){
             break;
         }
@@ -485,11 +490,22 @@ bool checkDomain(int ent, int room){//checks if the domain value is feasible
                 }
             }
         }
-        else if(cons.type==6 && cons.hardness==true && cons.subject==ent){//not sharing constraint
-            for(int i=0;i<entities.size();i++){
-                if(solution[i]==room){
-                    return false;
+        else if(cons.type==6 && cons.hardness==true){//not sharing constraint
+            /*cout << "("<< cons.subject;
+            cout << solution[cons.subject];
+            cout << solution[4];
+            cout << ent;
+            cout << room;
+            cout << ")";*/
+            if(ent==cons.subject){
+                for(int i=0;i<entities.size();i++){
+                    if(solution[i]==room){
+                        return false;
+                    }
                 }
+            }
+            else if(solution[cons.subject]==room){
+                return false;
             }
         }
         else if(cons.type==7 && cons.hardness==true && (cons.target==ent || cons.subject==ent)){//adjacency constraint
@@ -672,7 +688,7 @@ int objectiveFunction(){
         }
     }
     
-    return penalties()+underusedSpace+overusedSpace;
+    return penalties()+underusedSpace+2*overusedSpace;
 }
 void writeSolution(){
     ofstream myfile;
@@ -686,18 +702,22 @@ void writeSolution(){
 
 void forwardChecking(){
     long unsigned int aux;
-    for(int i=0;i<=domain.size();i++){
-        if(i==domain.size()){//Si tengo una solucion, borra del dominio el ultimo valor instanseado y hace backtrack cronologico
+    for(int i=0;i<=entities.size();i++){
+        
+        if(i==entities.size()){//Si tengo una solucion, borra del dominio el ultimo valor instanseado y hace backtrack cronologico
             domain[i-1].erase(domain[i-1].begin());
             i-=2;
+            //cout<<"solucion:"<<endl;
             writeSolution();
             continue;
         }
         if(domain[i].size()==0){//Si la entidad no tiene dominio, hace backtrack cronologico
+            //cout<<"backtrack:"<<endl;
             if(i==0){
                 return;
             }
             domain[i-1].erase(domain[i-1].begin());
+            solution[i]=-1;
             for(int m=0;m<rooms.size();m++){
                 domain[i].push_back(m);
             }
@@ -705,27 +725,38 @@ void forwardChecking(){
             continue;
             
         }
-
+////////////////////////////////////// NO TOCAR ///////////////////////////////////////////////
         aux=domain[i].size();
         vector<int>::iterator it=domain[i].begin();
+        //cout << "["<< aux <<"]";
+        int iterator=0;
         for(int j=0;j<aux;j++){
-            if(!checkDomain(i, j)){
+            //cout <<"(" << i << domain[i][iterator]<<")";
+            //cout << endl << endl;
+            if(!checkDomain(i, domain[i][iterator])){
                 domain[i].erase(it);
                 continue;
             }
+            iterator++;
             it++;
-            
-            
         }
+////////////////////////////////////// NO TOCAR ///////////////////////////////////////////////
+
+        //showSolution();
+        //showDomain();
         if(domain[i].size()==0){//Si la entidad no tiene dominio, hace backtrack cronologico
+            //cout<<"backtrack:"<<endl;
             if(i==0){
                 return;
             }
             domain[i-1].erase(domain[i-1].begin());
+            solution[i]=-1;
             for(int m=0;m<rooms.size();m++){
                 domain[i].push_back(m);
             }
             i-=2;
+            //cout<<"solucion:"<<endl;
+            writeSolution();
             continue;
             
         }
