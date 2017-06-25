@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include <fstream>
+#include <regex>
 using namespace std;
 
 struct Entity{
@@ -47,8 +48,10 @@ int p7=10;  //adjacency
 int p8=10;  //nearby
 int p9=10;  //away
 
-int iterations=10000;//Solutions found until the algorithm stops
+string outputFile="/instancia.out";
+int nSolutions=0;//number of solutions found
 vector<vector<int>> graphConnections;
+vector<vector<int>> capacityConstraintConnections;//Room connected to entity by capacity constraint
 vector<int> order;
 vector<int> solution;
 vector<int> bestSolution;
@@ -56,7 +59,21 @@ vector<vector<int>> domain;
 vector<Entity> entities;
 vector<Room> rooms;
 vector<Constraint> constraints;
+vector<Constraint> capacityConstraints;
+vector<vector<vector<int>>> domainList;
+vector<Constraint> unaryRestrictions;
 vector<vector<Constraint>> constraintsPerEntity;
+void initCapacityConstraintConnections(vector<int> sol){
+    
+    for(Constraint cons:capacityConstraints){
+        capacityConstraintConnections[cons.subject].clear();
+        for(int i=0;i<sol.size();i++){
+            if(cons.subject==sol[i]){
+                capacityConstraintConnections[cons.subject].push_back(i);
+            }
+        }
+    }
+}
 void initSolution(){
     for(int i=0;i<entities.size();i++){
         solution.push_back(-1);
@@ -67,9 +84,12 @@ void initDomain(){
     for(int i=0;i<entities.size();i++){
         vector<int> aux;
         for(int j=0;j<rooms.size();j++){
-            aux.push_back(j);
+            aux.push_back((j+i)%rooms.size());
         }
         domain.push_back(aux);
+    }
+    for(int i=0;i<entities.size();i++){
+        domainList.push_back(domain);
     }
 }
 void showDomain(){
@@ -87,35 +107,119 @@ void showSolution(vector<int> sol){
     }
     cout << endl;
 }
+void initOrder(){
+    vector<int> priority;
+    int entPriority=0;
+    for(int i=0;i<entities.size();i++){
+        for(Constraint cons: constraintsPerEntity[i]){
+            if(cons.type==0){
+                entPriority+=100000;
+            }
+            else if(cons.type==1){
+                entPriority+=1;
+            }
+            else if(cons.type==4){
+                entPriority+=1000;
+            }
+            else if(cons.type==5){
+                entPriority+=1;
+            }
+            else if(cons.type==6){
+                entPriority+=10000;
+            }
+            else if(cons.type==7){
+                entPriority+=100;
+            }
+            else if(cons.type==8){
+                entPriority+=10;
+            }
+            else if(cons.type==9){
+                entPriority+=1;
+            }
+        }
+        priority.push_back(entPriority);
+        entPriority=0;
+    }
+    int maxPriority=-1;
+    int maxId=0;
+    for(int i=0;i<priority.size();i++){
+        for(int j=0;j<priority.size();j++){
+            if(priority[j]>maxPriority){
+                maxPriority=priority[j];
+                maxId=j;
+            }
+        }
+        order.push_back(maxId);
+        maxPriority=0;
+        priority[maxId]=-1;
+    }
+}
 void initGraphConnections(){
+    for(int i=0;i<entities.size();i++){
+        vector<int> aux;
+        graphConnections.push_back(aux);
+        capacityConstraintConnections.push_back(aux);
+    }
     for(Constraint cons: constraints){
+        
+        
+        if(cons.type==0 && cons.hardness==true){//allocation constraint
+            unaryRestrictions.push_back(cons);
+        }
+        
+        if(cons.type==1 && cons.hardness==true){//non allocation constraint
+            unaryRestrictions.push_back(cons);
+        }
         if(cons.type==4 && cons.hardness==true){//sameroom constraint
-            graphConnections[cons.target].push_back(cons.subject);
-            graphConnections[cons.subject].push_back(cons.target);
+            if(find(graphConnections[cons.target].begin(), graphConnections[cons.target].end(), cons.subject) == graphConnections[cons.target].end()) {
+                graphConnections[cons.target].push_back(cons.subject);
+            }
+            if(find(graphConnections[cons.subject].begin(), graphConnections[cons.subject].end(), cons.subject) == graphConnections[cons.subject].end()) {
+                graphConnections[cons.subject].push_back(cons.target);
+            }
         }
         else if(cons.type==5 && cons.hardness==true){//not same room constraint
-            graphConnections[cons.target].push_back(cons.subject);
-            graphConnections[cons.subject].push_back(cons.target);
+            if(find(graphConnections[cons.target].begin(), graphConnections[cons.target].end(), cons.subject) == graphConnections[cons.target].end()) {
+                graphConnections[cons.target].push_back(cons.subject);
+            }
+            if(find(graphConnections[cons.subject].begin(), graphConnections[cons.subject].end(), cons.subject) == graphConnections[cons.subject].end()) {
+                graphConnections[cons.subject].push_back(cons.target);
+            }
         }
-        else if(cons.type==6 && cons.hardness==true){//not sharing constraint
-            for(int i=0;i<entities.size();i++){
-                if(i!=cons.subject){
-                    graphConnections[cons.subject].push_back(i);
-                    graphConnections[i].push_back(cons.subject);
-                }
+        /*else if(cons.type==6 && cons.hardness==true){//not sharing constraint
+         for(int i=0;i<entities.size();i++){
+         if(i!=cons.subject){
+         graphConnections[cons.subject].push_back(i);
+         graphConnections[i].push_back(cons.subject);
+         }
+         }
+         }*/
+        else if(cons.type==7 && cons.hardness==true){//adjacency constraint
+            if(find(graphConnections[cons.target].begin(), graphConnections[cons.target].end(), cons.subject) == graphConnections[cons.target].end()) {
+                graphConnections[cons.target].push_back(cons.subject);
+            }
+            if(find(graphConnections[cons.subject].begin(), graphConnections[cons.subject].end(), cons.subject) == graphConnections[cons.subject].end()) {
+                graphConnections[cons.subject].push_back(cons.target);
+            }        }
+        else if(cons.type==8 && cons.hardness==true){//neaby constraint
+            if(find(graphConnections[cons.target].begin(), graphConnections[cons.target].end(), cons.subject) == graphConnections[cons.target].end()) {
+                graphConnections[cons.target].push_back(cons.subject);
+            }
+            if(find(graphConnections[cons.subject].begin(), graphConnections[cons.subject].end(), cons.subject) == graphConnections[cons.subject].end()) {
+                graphConnections[cons.subject].push_back(cons.target);
+            }
+        }
+        else if(cons.type==9 && cons.hardness==true){//away from constraint
+            if(find(graphConnections[cons.target].begin(), graphConnections[cons.target].end(), cons.subject) == graphConnections[cons.target].end()) {
+                graphConnections[cons.target].push_back(cons.subject);
+            }
+            if(find(graphConnections[cons.subject].begin(), graphConnections[cons.subject].end(), cons.subject) == graphConnections[cons.subject].end()) {
+                graphConnections[cons.subject].push_back(cons.target);
             }
         }
     }
-        
-}
-
-int jumpbackGBJ(int ent){
     
-    
-    return ent;
 }
-
-
 
 Entity readEntity(string line){//Lee una entidad a partir de una linea del .txt
     Entity ent;
@@ -157,7 +261,7 @@ Entity readEntity(string line){//Lee una entidad a partir de una linea del .txt
             aux+=c;
         }
         
-            
+        
     }
     ent.space=stof(aux);
     return ent;
@@ -345,7 +449,7 @@ void showConstraints(){//Muestra las restricciones cargadas en memoria
         cout << (*it3).id << " " << (*it3).type << " " << (*it3).hardness << " " << (*it3).subject << " " << (*it3).target << "\n";
     }
 }
- 
+
 void readInstance(string path){//Lee la instancia de datos a partir de la direccion del archivo
     string line;
     ifstream file;
@@ -367,18 +471,18 @@ void readInstance(string path){//Lee la instancia de datos a partir de la direcc
             break;
         }
         entities.push_back(readEntity(line));
-
+        
     }
     
     while ( getline (file,line) ){//READ ROOMS
-            if(line.size()<2){
-                continue;
-            }
-
-            if(line[0]=='C'){
-                break;
-            }
-            rooms.push_back(readRoom(line));
+        if(line.size()<2){
+            continue;
+        }
+        
+        if(line[0]=='C'){
+            break;
+        }
+        rooms.push_back(readRoom(line));
     }
     
     while ( getline (file,line) ){//READ CONSTRAINTS
@@ -392,7 +496,7 @@ void readInstance(string path){//Lee la instancia de datos a partir de la direcc
 }
 
 bool checkDomain(int ent, int room){//checks if the domain value is feasible
-    for(Constraint cons: constraints){
+    for(Constraint cons: constraintsPerEntity[ent]){
         if(cons.type==-1){//Unused Constraint
             continue;
         }
@@ -484,7 +588,7 @@ bool checkDomain(int ent, int room){//checks if the domain value is feasible
                     }
                 }
             }
-
+            
             
             if(!isAdjacent){
                 return false;
@@ -504,7 +608,7 @@ bool checkDomain(int ent, int room){//checks if the domain value is feasible
                 if(rooms[room].floor!=rooms[solution[cons.subject]].floor){
                     return false;
                 }
-              
+                
             }
         }
         else if(cons.type==9 && cons.hardness==true && (cons.target==ent || cons.subject==ent)){//away from constraint
@@ -530,6 +634,10 @@ bool checkDomain(int ent, int room){//checks if the domain value is feasible
 }
 
 void initConstrainsPerEntity(){//initialize constraint per entity
+    for(int i=0; i<entities.size();i++){
+        vector<Constraint> aux;
+        constraintsPerEntity.push_back(aux);
+    }
     for(Constraint cons: constraints){
         if(cons.type==0){//Allocation constraint
             constraintsPerEntity[cons.subject].push_back(cons);
@@ -570,7 +678,23 @@ void initConstrainsPerEntity(){//initialize constraint per entity
         
     }
 }
-
+void checkUnaryRestrictions(){//Check all the unary restrictions
+    for(Constraint cons:unaryRestrictions){
+        vector<int>::iterator it=domain[cons.subject].begin();
+        for(int i=0;i<domain[cons.subject].size();i++){
+            if(cons.type==0){
+                domain[cons.subject].clear();
+                domain[cons.subject].push_back(cons.target);
+            }
+            else if(cons.type==1){
+                if(domain[cons.subject][i]==cons.target){
+                    domain[cons.subject].erase(it);
+                }
+            }
+            it++;
+        }
+    }
+}
 int penalties(){//returns the penalties of soft constraints
     int penalties=0;
     for(Constraint cons: constraints){
@@ -633,7 +757,7 @@ int penalties(){//returns the penalties of soft constraints
             if(rooms[solution[cons.subject]].floor!=rooms[solution[cons.target]].floor){
                 penalties+=p8;
             }
-           
+            
         }
         else if(cons.type==9 && cons.hardness==false){//away from constraint
             if(rooms[solution[cons.subject]].floor==rooms[solution[cons.target]].floor){
@@ -674,7 +798,8 @@ void generateOutput(vector<int> sol){//Genera el archivo de output
     int nRB=0;
     string softCons="";
     ofstream myfile;
-    myfile.open ("/Users/carlos/Downloads/OSAP-Instancias/nott_data/output.txt",ios::app);
+    myfile.open (outputFile,ios::app);
+    myfile << "Mejor solucion numero " << nSolutions << "\nFuncion objetivo: " << objectiveFunction(bestSolution)<< endl;
     for(Constraint cons: constraints){
         if(cons.type==-1){//Unused Constraint
             continue;
@@ -802,9 +927,11 @@ void generateOutput(vector<int> sol){//Genera el archivo de output
         }
         myfile << nEh << "\t" << entidades << endl;
     }
-    
+    myfile << endl;
     myfile.close();
 }
+
+
 void writeSolution(){
     ofstream myfile;
     myfile.open ("/Users/carlos/Downloads/OSAP-Instancias/nott_data/output.txt",ios::app);
@@ -818,18 +945,14 @@ void writeSolution(){
 void forwardCheckingBT(){
     long unsigned int aux;
     for(int i=0;i<=entities.size();i++){
-        
+        writeSolution();
         if(i==entities.size()){//Si tengo una solucion, borra del dominio el ultimo valor instanseado y hace backtrack cronologico
             domain[i-1].erase(domain[i-1].begin());
             i-=2;
-            //iterations--;
             if(objectiveFunction(solution)<objectiveFunction(bestSolution)){
                 bestSolution=solution;
-                writeSolution();
             }
-            //if(iterations==0){
-            //    return;
-            //}
+            
             continue;
         }
         if(domain[i].size()==0){//Si la entidad no tiene dominio, hace backtrack cronologico
@@ -857,7 +980,7 @@ void forwardCheckingBT(){
             iterator++;
             it++;
         }
-
+        
         if(domain[i].size()==0){//Si la entidad no tiene dominio, hace backtrack cronologico
             if(i==0){
                 return;
@@ -875,78 +998,261 @@ void forwardCheckingBT(){
     }
     
 }
-
 void forwardCheckingGBJ(){
     long unsigned int aux;
+    int counter=0;
     for(int i=0;i<=entities.size();i++){
-        
-        if(i==entities.size()){//Si tengo una solucion, borra del dominio el ultimo valor instanseado y hace backtrack cronologico
-            domain[i-1].erase(domain[i-1].begin());
-            i-=2;
-            iterations--;
+        counter++;
+        if(counter==100000){
+            writeSolution();
+            //generateOutput(solution);
+            counter=0;
+        }
+        if(i==entities.size()){//Si tengo una solucion, borra del dominio el ultimo valor instanseado
             if(objectiveFunction(solution)<objectiveFunction(bestSolution)){
                 bestSolution=solution;
-                
+                generateOutput(bestSolution);
+                nSolutions+=1;
             }
-            if(iterations==0){
-                return;
-            }
+            domain[order[i-1]].erase(domain[order[i-1]].begin());
+            solution[order[i-1]]=-1;
+            i-=2;
             continue;
         }
-        if(domain[i].size()==0){//Si la entidad no tiene dominio, hace backtrack cronologico
+        if(domain[order[i]].size()==0){//Si la entidad no tiene dominio, hace GBJ
             if(i==0){
                 return;
             }
-            domain[i-1].erase(domain[i-1].begin());
-            solution[i]=-1;
-            for(int m=0;m<rooms.size();m++){
-                domain[i].push_back(m);
+            for(int m=0;m<rooms.size();m++){//restaura el dominio de la variable i
+                domain[order[i]].push_back((m+i)%rooms.size());
             }
+            for(int p=i-1;p>=0;p--){
+                for(int q=0;q<graphConnections[order[p]].size();q++){
+                    if(graphConnections[order[p]][q]==order[i]){//Si existe un nodo para GBJ hace backtrack
+                        for(int r=i-1;r>p;r--){
+                            domain[order[r]].clear();
+                            solution[order[r]]=-1;
+                            for(int m=0;m<rooms.size();m++){
+                                domain[order[r]].push_back((m+r)%rooms.size());
+                            }
+                        }
+                        i=p;
+                        domain[order[p]].erase(domain[order[p]].begin());
+                        solution[order[p]]=-1;
+                        continue;
+                        
+                    }
+                }
+            }
+            //Si no hay nodo para GBJ, hace backtrack cronologico
+            domain[order[i-1]].erase(domain[order[i-1]].begin());
+            solution[order[i-1]]=-1;
             i-=2;
             continue;
-            
         }
-        aux=domain[i].size();
-        vector<int>::iterator it=domain[i].begin();
+        
+        aux=domain[order[i]].size();
+        vector<int>::iterator it=domain[order[i]].begin();
         int iterator=0;
         for(int j=0;j<aux;j++){
-            if(!checkDomain(i, domain[i][iterator])){
-                domain[i].erase(it);
+            if(!checkDomain(order[i], domain[order[i]][iterator])){
+                domain[order[i]].erase(it);
                 continue;
             }
             iterator++;
             it++;
         }
         
-        if(domain[i].size()==0){//Si la entidad no tiene dominio, hace backtrack cronologico
+        if(domain[order[i]].size()==0){//Si la entidad no tiene dominio, hace GBJ
             if(i==0){
                 return;
             }
-            domain[i-1].erase(domain[i-1].begin());
-            solution[i]=-1;
-            for(int m=0;m<rooms.size();m++){
-                domain[i].push_back(m);
+            for(int m=0;m<rooms.size();m++){//restaura el dominio de la variable i
+                domain[order[i]].push_back((m+i)%rooms.size());
             }
+            for(int p=i-1;p>=0;p--){
+                for(int q=0;q<graphConnections[order[p]].size();q++){
+                    if(graphConnections[order[p]][q]==order[i]){//Si existe un nodo para GBJ hace backtrack
+                        for(int r=i-1;r>p;r--){
+                            domain[order[r]].clear();
+                            solution[order[r]]=-1;
+                            for(int m=0;m<rooms.size();m++){
+                                domain[order[r]].push_back((m+r)%rooms.size());
+                            }
+                        }
+                        i=p;
+                    }
+                }
+            }
+            //Si no hay nodo para GBJ, hace backtrack cronologico
+            domain[order[i-1]].erase(domain[order[i-1]].begin());
+            solution[order[i-1]]=-1;
             i-=2;
             continue;
             
         }
-        solution[i]=domain[i][0];
+        solution[order[i]]=domain[order[i]][0];//Asigna el primer valor del dominio a la variable
     }
     
 }
 
+void forwardChecking(){
+    int i=0;
+    checkUnaryRestrictions();
+    while(true){
+        if(domain[0].size()==0 ){
+            return;
+        }
+        domainList[i]=domain;
+        //cout << i+1 << endl;
+        //showSolution(solution);
+        //showDomain();
+        if(i==entities.size()){//Si tengo una solucion, borra del dominio el ultimo valor instanseado
+            if(objectiveFunction(solution)<objectiveFunction(bestSolution)){
+                bestSolution=solution;
+                //generateOutput(bestSolution);
+                writeSolution();
+                nSolutions+=1;
+            }
+            domain[i-1].erase(domain[i-1].begin());
+            solution[i-1]=-1;
+            i-=1;
+            continue;
+        }
+        if(domain[i].size()==0){
+            bool gbj=false;
+            for(int p=i-1;p>=0;p--){//Check graph connections
+                for(int q=0;q<graphConnections[i].size();q++){
+                    if(graphConnections[i][q]==p){//Si existe un nodo para GBJ hace backtrack
+                        for(int h=p;h<i;h++){
+                            solution[h]=-1;
+                        }
+                        domain=domainList[p];
+                        i=p;
+                        domain[p].erase(domain[p].begin());
+                        initCapacityConstraintConnections(solution);
+                        gbj=true;
+                        break;
+                    }
+                }
+                if(gbj){break;}
+            }
+            if(gbj){continue;}
+            for(int p=i-1;p>=0;p--){//Check capacity constraint connections
+                for(int q=0;q<capacityConstraintConnections[solution[i]].size();q++){
+                    if(capacityConstraintConnections[solution[i]][q]==p){//Si existe un nodo para GBJ hace backtrack
+                        for(int h=p;h<i;h++){
+                            solution[h]=-1;
+                        }
+                        domain=domainList[p];
+                        i=p;
+                        domain[p].erase(domain[p].begin());
+                        initCapacityConstraintConnections(solution);
+                        gbj=true;
+                        break;
+                    }
+                }
+                if(gbj){break;}
+            }
+            if(gbj){continue;}
+            domain=domainList[i-1];
+            domain[i-1].erase(domain[i-1].begin());
+            solution[i]=-1;
+            solution[i-1]=-1;
+            i-=1;
+            initCapacityConstraintConnections(solution);
+            continue;
+        }
+        solution[i]=domain[i][0];
+        for(Constraint cons:capacityConstraints){
+            if(cons.subject==solution[i]){
+                capacityConstraintConnections[solution[i]].push_back(i);
+            }
+        }
+        long unsigned int aux;
+        
+        ////////CHECK GRAPH CONNECTIONS
+        bool backtrack=false;
+        for(int q=0;q<graphConnections[i].size();q++){
+            int asdf=graphConnections[i][q];
+            
+            if(asdf<=i){
+                continue;
+            }
+            
+            aux=domain[asdf].size();
+            vector<int>::iterator it=domain[asdf].begin();
+            int iterator=0;
+            for(int j=0;j<aux;j++){//CHECK DOMAIN
+                if(!checkDomain(asdf, domain[asdf][iterator])){
+                    domain[asdf].erase(it);
+                    continue;
+                }
+                iterator++;
+                it++;
+            }
+            ///////////try next value
+            if(domain[asdf].size()==0){
+                backtrack=true;
+                domain=domainList[i];
+                domain[i].erase(domain[i].begin());
+                solution[i]=-1;
+                break;
+            }
+        }
+        ////////////CHECK CAPACITY CONSTRAINT CONNECTIONS
+        for(int q=0;q<capacityConstraintConnections[solution[i]].size();q++){
+            int asdf=capacityConstraintConnections[solution[i]][q];
+            if(asdf<=i){
+                continue;
+            }
+            
+            aux=domain[asdf].size();
+            vector<int>::iterator it=domain[asdf].begin();
+            int iterator=0;
+            for(int j=0;j<aux;j++){//CHECK DOMAIN
+                if(!checkDomain(asdf, domain[asdf][iterator])){
+                    domain[asdf].erase(it);
+                    continue;
+                }
+                iterator++;
+                it++;
+            }
+            ///////////try next value
+            if(domain[asdf].size()==0){
+                backtrack=true;
+                domain=domainList[i];
+                domain[i].erase(domain[i].begin());
+                solution[i]=-1;
+                break;
+            }
+        }
+        if(backtrack){
+            continue;
+        }
+        
+    i++;
+        
+    }
+
+}
 
 int main(int argc, const char * argv[]) {
-    //cout << "Ingrese direccion de la instancia a leer:";
+    cout << "Ingrese direccion de la instancia a leer. Ejemplo: /Users/carlos/Downloads/OSAP-Instancias/nott_data/nott1d.txt" << endl;
     string path="/Users/carlos/Downloads/OSAP-Instancias/nott_data/nott1d.txt";
     //cin >> path;
+    outputFile=path;
+    if(outputFile.substr(outputFile.size()-4,outputFile.size())==".txt"){
+        outputFile=outputFile.substr(0,outputFile.size()-4);
+    }
+    outputFile+=".out";
     readInstance(path);
     initSolution();
     initDomain();
-    forwardCheckingBT();
-    //generateOutput(bestSolution);
-    //showSolution(bestSolution);
-    //cout << objectiveFunction(bestSolution) << endl;
+    initConstrainsPerEntity();
+    initOrder();
+    initGraphConnections();
+    initCapacityConstraintConnections(solution);
+    forwardChecking();
     return 0;
 }
